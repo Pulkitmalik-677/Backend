@@ -1,7 +1,7 @@
 import torch
 import pandas as pd
 import re
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, jsonify
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from sentence_transformers import SentenceTransformer, util
 from docx import Document
@@ -58,13 +58,13 @@ def generate_clause(prompt_text):
         return generated_text.split("Clause:")[1].split("EndClause")[0].strip()
     return generated_text.split("Clause:")[1].strip()
 
-def fill_parameters_dynamic(clause_text, param_string):
+def fill_parameters_dynamic(clause_text, param_string, provided_values):
     placeholders = set(re.findall(r"{(.*?)}", clause_text))
     defined_params = [p.strip() for p in str(param_string).split(',') if p.strip()]
     combined_params = sorted(placeholders.union(set(defined_params)))
     param_values = {}
     for param in combined_params:
-        param_values[param] = f"[{param}]"
+        param_values[param] = provided_values.get(param, f"[{param}]")
     for param, value in param_values.items():
         clause_text = clause_text.replace(f"{{{param}}}", value)
     return clause_text
@@ -78,12 +78,11 @@ def find_best_match_semantic(user_input):
         return prompt_df.iloc[best_idx]
     return None
 
-# Flask app
 app = Flask(__name__)
 
 @app.route("/", methods=["GET"])
 def index():
-    return "Nyaya Jyoti AI Clause Generator Backend (DOCX + HTML) is Running."
+    return "Nyaya Jyoti AI Clause Generator Backend (DOCX + HTML via mammoth) is Running."
 
 @app.route("/generate", methods=["POST"])
 def generate():
@@ -101,26 +100,26 @@ def generate():
                         para.text = para.text.replace(f"[{key}]", value)
 
         special_input = data.get("Special_Clauses", "").strip()
+        special_clause_text = ""
         if special_input:
             match_row = find_best_match_semantic(special_input)
             if match_row is not None:
                 prompt = build_prompt(match_row['example_1'], match_row['example_2'], match_row['instruction'])
                 raw_clause = generate_clause(prompt)
-                final_clause = fill_parameters_dynamic(raw_clause, match_row.get("parameters", ""))
-                for para in doc.paragraphs:
-                    if "[Special_Clauses]" in para.text:
-                        para.text = para.text.replace("[Special_Clauses]", final_clause)
-                        break
-        else:
-            for para in doc.paragraphs:
-                if "[Special_Clauses]" in para.text:
-                    para.text = para.text.replace("[Special_Clauses]", "N/A")
+                final_clause = fill_parameters_dynamic(raw_clause, match_row.get("parameters", ""), data)
+                special_clause_text = final_clause
+
+        for para in doc.paragraphs:
+            if "[Special_Clauses]" in para.text:
+                para.text = para.text.replace("[Special_Clauses]", special_clause_text or "N/A")
+                break
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
             doc.save(tmp.name)
             with open(tmp.name, "rb") as docx_file:
                 result = mammoth.convert_to_html(docx_file)
                 html_string = result.value
+                docx_file.seek(0)
                 encoded_docx = docx_file.read()
 
         return jsonify({
