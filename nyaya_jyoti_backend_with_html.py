@@ -5,7 +5,7 @@ from flask import Flask, request, send_file, jsonify
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from sentence_transformers import SentenceTransformer, util
 from docx import Document
-from docx2html import convert as docx2html_convert
+import mammoth
 import tempfile
 import os
 
@@ -118,9 +118,10 @@ def generate():
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
             doc.save(tmp.name)
-            html_string = docx2html_convert(tmp.name)
-            with open(tmp.name, "rb") as f:
-                encoded_docx = f.read()
+            with open(tmp.name, "rb") as docx_file:
+                result = mammoth.convert_to_html(docx_file)
+                html_string = result.value
+                encoded_docx = docx_file.read()
 
         return jsonify({
             "docx_base64": encoded_docx.decode("latin1"),
