@@ -106,8 +106,12 @@ def generate():
             if match_row is not None:
                 prompt = build_prompt(match_row['example_1'], match_row['example_2'], match_row['instruction'])
                 raw_clause = generate_clause(prompt)
+                print("🧠 GPT RAW CLAUSE:", raw_clause)
                 final_clause = fill_parameters_dynamic(raw_clause, match_row.get("parameters", ""), data)
+                print("📋 Final Substituted Clause:", final_clause)
                 special_clause_text = final_clause
+            else:
+                print("⚠️ No match found for special clause:", special_input)
 
         for para in doc.paragraphs:
             if "[Special_Clauses]" in para.text:
